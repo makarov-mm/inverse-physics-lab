@@ -426,3 +426,10 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# Project-specific test and smoke artifacts
+ValidationInversePhysics3D/
+Inverse3D-*.txt
+Inverse3D-*.bmp
+Inverse-observations.csv
+Inverse-fit.csv

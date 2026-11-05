@@ -2,7 +2,7 @@
 
 ![Screenshot](screenshot.png)
 
-**Interface update:** This project uses the shared modern WinAPI interface: flat themed controls, scrollable settings and keyboard navigation. See [Modern UI](../../MODERN_UI.md). Simulation shortcuts apply when the 3D canvas has focus; focused controls use their native keys.
+The settings column uses native Windows controls with flat themed painting, scrolling and keyboard navigation (`ModernUI.hpp`). Simulation shortcuts apply when the 3D canvas has focus; focused controls use their native keys.
 
 Recover physical parameters from observed motion of a **three-dimensional spring network**. OpenGL compute shaders simulate trial trajectories, build a finite-difference Jacobian, reduce normal equations, solve parameter updates and choose decreasing steps. A native interface displays the reconstructed body, observations, residuals and convergence history.
 
@@ -11,12 +11,9 @@ The project uses **C++23, WinAPI/WGL, Visual Studio 2026 and OpenGL 4.3 Core**. 
 ## Build and run
 
 1. Install Visual Studio 2026 with **Desktop development with C++**, **MSVC v145** and a Windows SDK.
-2. Open `InversePhysicsLab3D.sln`, select **Release | x64**, and build/run `07_InversePhysicsLab`.
-3. Alternatively, run `./BuildInversePhysics3D.ps1`. The executable is `bin/x64/Release/07_InversePhysicsLab.exe`. Use `-Configuration Debug` for a Debug build.
+2. Open `InversePhysicsLab.slnx`, select **Release | x64**, and build/run `InversePhysicsLab`.
 
-The complete collection also builds the application through `PhysicsLab.sln`. The standalone solution has no reference to other projects or `PhysicsCore`. The collection's old `Simulation.cpp` remains only as a historical CPU regression solver; it is not compiled into this executable or included in the standalone archive.
-
-Both configurations use the static Microsoft C++ runtime. The tested compiler is MSVC 14.51.36231 with `/std:c++23preview`, the C++23 switch supported by that toolset. Runtime requirements are Windows, an interactive desktop and a graphics driver supporting **OpenGL 4.3 Core with compute shaders**. Context or shader failures produce an error instead of silently using a CPU solver. Minimum window size is 1080 × 1000 physical pixels; a 1080p or larger desktop is recommended.
+Both configurations use the static Microsoft C++ runtime and compile at warning level 4. The tested compiler is MSVC 14.51 with `/std:c++23preview`, the C++23 switch supported by that toolset. Runtime requirements are Windows, an interactive desktop and a graphics driver supporting **OpenGL 4.3 Core with compute shaders**. Context or shader failures produce an error instead of silently using a CPU solver. The minimum window size is 1080 × 760 physical pixels; the default is 1360 × 1000, suitable for a 1080p or larger desktop.
 
 ## Experiments
 
@@ -130,11 +127,11 @@ The UI displays estimates and synthetic truth (when available), iteration count,
 
 The normalized Gram determinant is `det(Jᵀ W J)/(H00 H11 H22)` for three active parameters. It is a sensitivity diagnostic, not a full condition number, covariance estimate or confidence interval. A missing residual set, negligible stiffness sensitivity or normalized determinant below `1e-7` stops the fit as uninformative. In one-parameter mode, a valid scalar sensitivity is reported as 1.
 
-Eight SSBO bindings hold optimizer state, trial trajectories, observations, the synthetic reference, normal-equation partials, candidates, convergence history and computed line vertices. A GPU geometry pass constructs the 3D paths, current spring bodies, residual vectors and convergence graph. Rendering uses vertex attributes, so it does not require vertex-stage SSBO support beyond OpenGL 4.3's minimum. Storage, vertex-attribute and readback barriers make the dispatch/render transitions explicit.
+Eight SSBO bindings hold optimizer state, trial trajectories, observations, the synthetic reference, normal-equation partials, candidates, convergence history and computed line vertices. Two `std140` uniform blocks carry the parameters: `Params` (sample count, integrator, dispatch mode, scene, display flags and the synthetic truth; 80 bytes) and `View` (camera matrices; 144 bytes), mirrored by `inverse::Params` and `inverse::ViewParams` in `Model.hpp`. A GPU geometry pass constructs the 3D paths, current spring bodies, residual vectors and convergence graph. Rendering uses vertex attributes, so it does not require vertex-stage SSBO support beyond OpenGL 4.3's minimum. Storage, vertex-attribute and readback barriers make the dispatch/render transitions explicit.
 
 The CPU creates the window, handles files and camera controls, schedules dispatches and reads an **80-byte state summary per iteration**. Full readback is limited to exports, verification, and preserving imported data across restart. Normal fitting never transfers whole trial trajectories to the CPU. The independent double-precision implementation in the source is called only by `--gpu-test`.
 
-GPU time is the latest completed optimizer-iteration query, including trial simulation, reductions, selection and geometry-independent diagnostics. It excludes rendering and CPU readback. The result may lag, initially shows zero, and remains the last fitting time during playback after convergence. Rendering FPS is not an optimization-iteration rate. A slow device slows the nominal 60 Hz scheduling instead of enlarging the integration step.
+GPU time is the latest completed optimizer-iteration query, including trial simulation, reductions, selection and geometry-independent diagnostics. It excludes rendering and CPU readback. The result may lag, initially shows zero, and remains the last fitting time during playback after convergence. Rendering FPS is not an optimization-iteration rate. The main loop accumulates real time and runs one tick (one playback sample and, while fitting, one optimizer iteration) per elapsed 1/60 s, at most one tick per rendered frame; a slow device therefore slows the nominal 60 Hz scheduling instead of enlarging the integration step.
 
 ## CSV observation format
 
@@ -160,24 +157,20 @@ Imported observations must match **this spring topology, rest geometry, masses, 
 
 Import parsing finishes before replacing the current dataset. For imported data, the optimizer does not read a hidden synthetic trajectory or true parameters. The observation export intentionally contains no true parameter values. Reconstructed-motion export is a separate analysis table and is not an observation-import file.
 
-## Verification and limitations
-
-Run `./TestInversePhysics3D.ps1` after a Release build. It creates a real graphics context and requires a fresh `ALL PASSED` report. `ValidationInversePhysics3D` receives numerical results, real framebuffer captures and example observation/reconstruction CSV files.
-
-Tests cover independent double-precision RK4 trajectories, fixed anchors, out-of-plane motion, finite-difference Jacobians, normal-equation reductions and partial workgroups; parameter recovery across presets/ranges; monotone objective history; sparse/high-noise data; known-parameter preservation; repeatability; CSV round-trip and malformed inputs; blinded imported fits; masked observations; uninformative data; UI controls and rendering. `--smoke` runs 180 default simulation/rendering frames and writes `Lab07_smoke.txt` and `Lab07.bmp` in the working directory. These modes briefly open a non-activating window and require an interactive graphics session.
-
-Synthetic observations use the same forward model as estimation. Excellent recovery therefore demonstrates internal consistency, not robustness to unmodeled real-world physics. Independent double tests measure numerical agreement, while real inverse problems also require model validity, informative measurements, appropriate noise assumptions and calibration. The program provides no uncertainty intervals or scientific validation for a particular physical material. See `ValidationInversePhysics3D/VALIDATION.md` for measured results and tested hardware.
-
 ## Source map and reading references
 
 | File | Responsibility |
 |---|---|
-| `Inverse3D.cpp` | GPU resources, native UI, fitting orchestration, display/export, smoke and numerical verification. |
-| `InverseShaders.hpp` | Forward RK4 model, observations, candidate search, Jacobian, normal equations, solve, acceptance and render geometry. |
-| `ObservationIO.hpp` | Strict numeric observation CSV parser and dataset container. |
-| `Math3D.hpp` | Small vector/matrix types and perspective camera. |
-| `GpuApi.hpp` | WGL context, explicit GL entry-point loading and shader diagnostics. |
-| `07_InversePhysicsLab.vcxproj` | Visual Studio 2026 C++23 application project. |
+| `Main.cpp` | Entry point, main loop. |
+| `App.hpp` / `App.cpp` | Native window, settings panel, camera interaction, status line and CSV dialogs. |
+| `Simulation.hpp` | GPU resources, fitting orchestration, uniform blocks, readback, display geometry and export. |
+| `Model.hpp` | Model and optimizer constants, `FitState`, the uniform-block structs and the dataset container. |
+| `InverseShaders.hpp` | GLSL chunks: forward RK4 model, observations, candidate search, Jacobian, normal equations, solve, acceptance and render geometry. |
+| `ObservationIO.hpp` | Strict numeric observation CSV parser. |
+| `Math3D.hpp` | Small vector/matrix types and the orbiting perspective camera. |
+| `GpuApi.hpp` | WGL context, the OpenGL 4.3 entry points and enumerants the lab uses, program building. |
+| `ModernUI.hpp` | Flat themed painting and scrolling for the native settings controls. |
+| `InversePhysicsLab.vcxproj` / `Common.props` | Visual Studio 2026 C++23 application project and shared compiler settings. |
 
 These references are background reading, not dependencies or included third-party source:
 

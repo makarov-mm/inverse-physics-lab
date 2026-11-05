@@ -2,5 +2,5 @@
   <Configurations>
     <Platform Name="x64" />
   </Configurations>
-  <Project Path="InversePhysicsLab.vcxproj" />
+  <Project Path="InversePhysicsLab.vcxproj" Id="9c6f4dde-0044-4d02-b3c6-87b9d44fa62a" />
 </Solution>
